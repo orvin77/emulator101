@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
+#include <string.h>
 
 typedef struct ConditionCodes {    
     uint8_t    z:1;    
@@ -97,10 +97,10 @@ void UnimplementedInstruction(State8080* state)
 
 int main ()    
 {    
-    FILE *f= fopen("roms/spaceinvaders/invaders.concatenated", "rb");    
+    FILE *f= fopen("8080_emulator/roms/spaceinvaders/invaders.concatenated", "rb");    
     if (f==NULL)    
     {    
-        printf("error: Couldn't open %s\n", "roms/spaceinvaders/invaders.concatenated");    
+        printf("error: Couldn't open %s\n", "8080_emulator/roms/spaceinvaders/invaders.concatenated");    
         return 1;    
     }    
     State8080* state = (State8080*)calloc(1,sizeof(State8080)); 
@@ -116,7 +116,7 @@ int main ()
     int pc = 0; 
     
 
-    while (true)    
+    while (1)    
     {    
         Emulate8080Op(state);
         //pc += Disassemble8080Op(buffer, pc);    

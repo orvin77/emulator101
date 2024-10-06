@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
+
 
 typedef struct ConditionCodes {    
     uint8_t    z:1;    
@@ -79,6 +81,16 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc)
         case 0xc3: printf("JMP    $%02x%02x",code[2],code[1]); opbytes = 3; break;
         /* ........ */
         case 0xCD: printf("CALL   $%02x%02x",code[2],code[1]); opbytes = 3; break;
+        case 0x77: printf("MOV   M, A");break;
+        case 0x80: printf("ADD   B"); break;
+        case 0x81: printf("ADD   C"); break;
+        case 0x82: printf("ADD   D"); break;
+        case 0x83: printf("ADD   E"); break;
+        case 0x84: printf("ADD   H"); break;
+        case 0x85: printf("ADD   L"); break;
+        case 0x86: printf("ADD   M"); break;
+        case 0x87: printf("ADD   B"); break;
+        case 0xC6: printf("ADI   D8,#0x%02x", code[1]); break;
     }
 
     printf("\n");
@@ -93,12 +105,38 @@ void UnimplementedInstruction(State8080* state)
     exit(1);    
 }    
 
- void Emulate8080Op(State8080* state)    
+int parity(uint8_t num) {
+    int count = 0;
+    while(num) 
+    {
+        if(num & 1) 
+        {
+            count+=1;
+        }
+        num >>= 1;
+    }
+    return count % 2;
+}
+
+//sets neccessary flags when called depending on the instruction
+void setFlags(uint16_t answer, State8080* state) {
+    state->cc.z = ((answer & 0xff) == 0);    
+    state->cc.s = ((answer & 0x80) != 0);    
+    state->cc.cy = (answer > 0xff);    
+    state->cc.p = parity(answer&0xff);  
+}
+
+unsigned char* fetch(State8080* state) {
+    unsigned char *opcode = &state->memory[state->pc];
+    return opcode;
+}
+
+void Emulate8080Op(unsigned char *opcode, State8080* state)    
 {    
-    unsigned char *opcode = &state->memory[state->pc]; 
     // printf("PC: %x\n", state->pc);
-    // printf("opcode: %x\n", *opcode); 
+    //printf("opcode: %x\n", *opcode); 
     Disassemble8080Op(state->memory, state->pc);
+    uint16_t answer;
     switch(*opcode)    
     {    
         case 0x00: break;                   //NOP is easy!    
@@ -115,8 +153,11 @@ void UnimplementedInstruction(State8080* state)
         /*....*/
         case 0x11:
             state->e = opcode[1];    
-            state->d = opcode[2];    
+            state->d = opcode[2];   
             state->pc += 2;                  //Advance 2 more bytes    
+            break;
+        case 0x1A:
+            state->a = state->memory[(uint16_t)(state->d << 8 | state->e)]; 
             break;
         case 0x21:
             state->l = opcode[1];    
@@ -141,6 +182,58 @@ void UnimplementedInstruction(State8080* state)
             state->sp -= 2;
             state->pc = ((opcode[2] << 8) | opcode[1]) - 1;
             break;
+        case 0x77:
+            state->memory[(uint16_t)(state->h << 8 | state->l)] = state->a; break; //MOV M, A
+        case 0x80:
+            //ADD B, A + B
+            answer = (uint16_t)state->a + (uint16_t)state->b;
+            setFlags(answer, state);        
+            state->a = answer & 0xff;
+            break;    
+        case 0x81:
+            //ADD C, A + C
+            answer = (uint16_t)state->a + (uint16_t)state->c;   
+            setFlags(answer, state); 
+            state->a = answer & 0xff;    
+            break;
+        case 0x82:
+            //ADD D, A + D
+            answer = (uint16_t)state->a + (uint16_t)state->d;    
+            setFlags(answer, state);    
+            state->a = answer & 0xff;    
+            break;
+        case 0x83:
+            //ADD E, A + E
+            answer = (uint16_t)state->a + (uint16_t)state->e;    
+            setFlags(answer, state);  
+            state->a = answer & 0xff;    
+            break;
+        case 0x84:
+            //ADD H, A + H
+            answer = (uint16_t)state->a + (uint16_t)state->h;    
+            setFlags(answer, state);   
+            state->a = answer & 0xff;    
+            break;
+        case 0x85:
+            //ADD L, A + L
+            answer = (uint16_t) state->a + (uint16_t) state->l;    
+            setFlags(answer, state);   
+            state->a = answer & 0xff;
+            break; 
+        case 0x86:
+            //ADD M, A + (HL)
+            //Adding from memory location of HL
+            answer = (uint16_t) state->a + state->memory[(uint16_t)(state->h << 8 | state->l)];    
+            setFlags(answer, state);  
+            state->a = answer & 0xff;
+            break;   
+        case 0xC6:
+            //ADI D8, A + Byte
+            //Adding byte
+            answer = (uint16_t) state->a + (uint16_t)opcode[1];    
+            setFlags(answer, state);  
+            state->a = answer & 0xff;
+            state->pc+=1;
         default: 
             printf("PC: %x\n", state->pc);
             printf("OPCODE: %x\n", *opcode); 
@@ -150,13 +243,13 @@ void UnimplementedInstruction(State8080* state)
     state->pc+=1;    
 }  
 
-int main ()    
-{    
-    FILE *f= fopen("8080_emulator/roms/spaceinvaders/invaders.concatenated", "rb");    
+State8080* Initialize() 
+{
+    FILE *f= fopen("roms/spaceinvaders/invaders.concatenated", "rb");    
     if (f==NULL)    
     {    
         printf("error: Couldn't open %s\n", "8080_emulator/roms/spaceinvaders/invaders.concatenated");    
-        return 1;    
+        return NULL;    
     }    
     State8080* state = (State8080*)calloc(1,sizeof(State8080)); 
     state->memory = (uint8_t*)malloc(0x6000);
@@ -164,13 +257,20 @@ int main ()
     fseek(f, 0L, SEEK_END);    
     int fsize = ftell(f);    
     fseek(f, 0L, SEEK_SET);       
-
     fread(state->memory, fsize, 1, f);    
-    fclose(f);    
+    fclose(f);
+    return state;
+}
 
+int main ()    
+{    
+    if(Initialize()==NULL) {
+        return 1;
+    }
+    State8080* s = Initialize();
     while (1)    
-    {    
-        Emulate8080Op(state);
+    {   
+        Emulate8080Op(fetch(s), s);
     }    
 
 
